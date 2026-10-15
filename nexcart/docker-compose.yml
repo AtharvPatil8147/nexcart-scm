@@ -1,0 +1,68 @@
+# ══════════════════════════════════════════════════════════════════
+# NexCart — Docker Compose (3-service setup)
+# ══════════════════════════════════════════════════════════════════
+version: '3.9'
+
+services:
+  # ── MongoDB (local fallback if Atlas is not configured) ────────
+  nexcart-mongo:
+    image: mongo:7
+    container_name: nexcart-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - nexcart-mongo-data:/data/db
+    networks:
+      - nexcart-network
+    restart: unless-stopped
+
+  # ── FastAPI Backend ────────────────────────────────────────────
+  nexcart-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nexcart-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - MONGODB_URI=mongodb://nexcart-mongo:27017
+    volumes:
+      - ./backend:/nexcart/backend
+    depends_on:
+      - nexcart-mongo
+    networks:
+      - nexcart-network
+    restart: unless-stopped
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /nexcart/backend
+
+  # ── Vite Frontend ─────────────────────────────────────────────
+  nexcart-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nexcart-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_TARGET=http://nexcart-backend:8000
+    depends_on:
+      - nexcart-backend
+    networks:
+      - nexcart-network
+    restart: unless-stopped
+    command: npm run dev -- --host 0.0.0.0
+
+# ── Shared Network ──────────────────────────────────────────────
+networks:
+  nexcart-network:
+    driver: bridge
+
+# ── Persistent Volumes ──────────────────────────────────────────
+volumes:
+  nexcart-mongo-data:
+    driver: local
