@@ -52,6 +52,9 @@ def _serialize_doc(doc: dict) -> dict:
         doc["affected_regions"] = payload.get("affected_regions") or ([payload["region"]] if payload.get("region") else [])
     if not doc.get("affected_sku_ids"):
         doc["affected_sku_ids"] = payload.get("affected_sku_ids", [])
+    for field, default in (("source_count", 0), ("genuineness_score", None), ("verification_status", None), ("evidence_sources", [])):
+        if field not in doc:
+            doc[field] = payload.get(field, default)
 
     return doc
 

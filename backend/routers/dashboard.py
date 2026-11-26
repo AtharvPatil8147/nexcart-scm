@@ -4,7 +4,6 @@ NexCart — Dashboard & Health Router
 Endpoints: /api/health, /api/health/db, /api/dashboard/stats
 """
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -16,6 +15,7 @@ from backend.database.collections import (
 )
 from backend.database.connection import get_db, ping_database
 from backend.utils.logger import get_logger
+from backend.core.settings import settings
 
 logger = get_logger("router.dashboard")
 router = APIRouter(tags=["Dashboard & Health"])
@@ -57,7 +57,7 @@ async def health_check():
         return HealthResponse(
             status="ok",
             version="1.0.0",
-            environment=os.getenv("APP_ENV", "development"),
+            environment=settings.app_env,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

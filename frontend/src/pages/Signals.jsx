@@ -56,6 +56,9 @@ function SignalCard({ signal, index }) {
     : (payload.affected_regions || (payload.region ? [payload.region] : []));
   const affected_sku_ids = signal.affected_sku_ids || payload.affected_sku_ids || [];
   const timestamp = signal.created_at || signal.processed_at || signal.published_at || payload.published_at;
+  const verification = signal.verification_status || payload.verification_status;
+  const genuineness = signal.genuineness_score ?? payload.genuineness_score;
+  const sourceCount = signal.source_count || payload.source_count;
 
   return (
     <div
@@ -134,6 +137,17 @@ function SignalCard({ signal, index }) {
               <ChevronDown className={clsx('w-3 h-3 transition-transform', expanded && 'rotate-180')} />
             </button>
           )}
+        </div>
+      )}
+
+      {/* Affected Regions */}
+      {source === 'news' && verification && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <span className={clsx('rounded-full px-2 py-1 font-semibold', verification === 'confirmed' ? 'bg-accent-teal/15 text-accent-teal' : 'bg-accent-amber/15 text-accent-amber')}>
+            {verification === 'confirmed' ? 'Confirmed' : verification === 'demo' ? 'Demo data' : 'Single source'}
+          </span>
+          {genuineness !== null && <span className="text-text-secondary">Genuineness: {genuineness}%</span>}
+          {sourceCount > 0 && <span className="text-text-secondary">{sourceCount} source{sourceCount === 1 ? '' : 's'}</span>}
         </div>
       )}
 

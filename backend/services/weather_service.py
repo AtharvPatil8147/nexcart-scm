@@ -5,13 +5,13 @@ Fetches weather-based disruption signals for key supplier regions.
 Falls back to realistic mock data if OPENWEATHER_API_KEY is missing.
 """
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
 
 from backend.utils.logger import get_logger
+from backend.core.settings import settings
 
 logger = get_logger("weather_service")
 
@@ -31,7 +31,7 @@ class WeatherService:
     """Fetches and normalises weather disruption signals from OpenWeatherMap."""
 
     def __init__(self) -> None:
-        self.api_key: str = os.getenv("OPENWEATHER_API_KEY", "")
+        self.api_key: str = settings.openweather_api_key
 
     @staticmethod
     def _score_severity(weather_data: dict) -> int:

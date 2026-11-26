@@ -5,19 +5,15 @@ Main app: mounts routers, CORS, lifespan events,
 request logging middleware, and global error handler.
 """
 
-import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-
-from dotenv import load_dotenv
-load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from backend.config import settings, startup_health_check
+from backend.core.settings import settings, startup_health_check
 from backend.database.connection import close_mongo_connection, connect_to_mongo
 from backend.utils.logger import get_logger
 
@@ -37,6 +33,8 @@ async def lifespan(app: FastAPI):
     # 1. Connect to MongoDB
     try:
         await connect_to_mongo()
+        from backend.routers.auth import bootstrap_admin
+        await bootstrap_admin()
     except Exception as exc:
         logger.error(f"MongoDB connection failed: {exc}")
 
@@ -87,12 +85,10 @@ app = FastAPI(
 # CORS MIDDLEWARE
 # ══════════════════════════════════════════════════════════════════
 
-frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        frontend_url,
+        settings.frontend_url,
         "http://localhost:5173",
         "http://localhost:3000",
     ],
@@ -100,6 +96,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def authentication_middleware(request: Request, call_next):
+    """Require a valid role-bearing token for all business API operations."""
+    public_paths = {"/api/health", "/api/health/db", "/api/auth/login", "/api/auth/roles", "/docs", "/openapi.json", "/redoc"}
+    if not request.url.path.startswith("/api/") or request.url.path in public_paths:
+        return await call_next(request)
+    from backend.security import allows, decode_access_token
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip() or request.query_params.get("access_token", "")
+    if not token:
+        return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+    try:
+        user = decode_access_token(token)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    if not allows(user["role"], request.method, request.url.path):
+        return JSONResponse(status_code=403, content={"detail": "Your role is not allowed to perform this action"})
+    request.state.user = user
+    return await call_next(request)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -151,17 +167,18 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ══════════════════════════════════════════════════════════════════
 
 from backend.routers.dashboard import router as dashboard_router
+from backend.routers.auth import router as auth_router
 from backend.routers.disruptions import router as disruptions_router
 from backend.routers.nudges import router as nudges_router
 from backend.routers.signals import router as signals_router
 from backend.routers.skus import router as skus_router
 
 app.include_router(dashboard_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 app.include_router(skus_router, prefix="/api")
 app.include_router(disruptions_router, prefix="/api")
 app.include_router(signals_router, prefix="/api")
 app.include_router(nudges_router, prefix="/api")
-
 
 # ══════════════════════════════════════════════════════════════════
 # ROOT REDIRECT
@@ -172,5 +189,4 @@ async def root_redirect():
     """Redirect root to API docs."""
     return RedirectResponse(url="/docs")
 
-
-print("✓ main.py complete")
+# End of application configuration.

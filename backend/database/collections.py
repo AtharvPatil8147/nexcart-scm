@@ -11,6 +11,7 @@ DISRUPTION_EVENTS: str = "disruption_events"
 CUSTOMER_PROFILES: str = "customer_profiles"
 NUDGE_CAMPAIGNS: str = "nudge_campaigns"
 SIGNAL_LOGS: str = "signal_logs"
+USERS: str = "users"
 
 # ── All collections as a list (used by connection.py for index setup)
 ALL_COLLECTIONS: list[str] = [
@@ -19,6 +20,7 @@ ALL_COLLECTIONS: list[str] = [
     CUSTOMER_PROFILES,
     NUDGE_CAMPAIGNS,
     SIGNAL_LOGS,
+    USERS,
 ]
 
 print("✓ collections.py complete")

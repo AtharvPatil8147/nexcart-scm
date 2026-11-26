@@ -436,6 +436,10 @@ class SignalLogResponse(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     severity: Optional[int] = None
+    source_count: int = 0
+    genuineness_score: Optional[int] = None
+    verification_status: Optional[str] = None
+    evidence_sources: list[dict] = Field(default_factory=list)
     affected_regions: list[str] = Field(default_factory=list)
     affected_sku_ids: list[str] = Field(default_factory=list)
     raw_payload: dict = Field(default_factory=dict)

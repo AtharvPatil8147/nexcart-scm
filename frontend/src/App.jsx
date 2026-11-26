@@ -14,6 +14,7 @@ import Signals from './pages/Signals';
 import Nudges from './pages/Nudges';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import Login from './pages/Login';
 
 const PAGE_TITLES = {
   '/dashboard': 'Dashboard',
@@ -50,11 +51,16 @@ function MainLayout() {
   );
 }
 
+function ProtectedRoute({ children }) {
+  return localStorage.getItem('nexcart_access_token') ? children : <Navigate to="/login" replace />;
+}
+
 export default function App() {
   return (
     <Routes>
+      <Route path="/login" element={<Login />} />
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/*" element={<MainLayout />} />
+      <Route path="/*" element={<ProtectedRoute><MainLayout /></ProtectedRoute>} />
     </Routes>
   );
 }

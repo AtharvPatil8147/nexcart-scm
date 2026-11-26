@@ -11,11 +11,22 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+client.interceptors.request.use((config) => {
+  const token = localStorage.getItem('nexcart_access_token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 // ── Response Interceptor ────────────────────────────────────
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    const isOnLoginPage = window.location.pathname === '/login';
+
+    if (error.response?.status === 401 && !isLoginRequest && !isOnLoginPage) {
+      localStorage.removeItem('nexcart_access_token');
+      localStorage.removeItem('nexcart_user');
       window.location.href = '/login';
     } else if (!error.response) {
       console.error('Network error: Cannot reach server');
@@ -24,8 +35,10 @@ client.interceptors.response.use(
   }
 );
 
+
 // ── Dashboard & Health ──────────────────────────────────────
 export const getHealth = () => client.get('/health').then(r => r.data);
+export const login = (data) => client.post('/auth/login', data).then(r => r.data);
 export const testDbConnection = () => client.get('/health/db').then(r => r.data);
 export const getStats = () => client.get('/dashboard/stats').then(r => r.data);
 

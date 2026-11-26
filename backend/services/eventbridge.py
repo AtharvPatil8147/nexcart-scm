@@ -6,7 +6,6 @@ Gracefully degrades if AWS credentials are missing.
 """
 
 import json
-import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,6 +13,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 
 from backend.utils.logger import get_logger
+from backend.core.settings import settings
 
 logger = get_logger("eventbridge")
 
@@ -22,16 +22,16 @@ class EventBridgeService:
     """Publishes disruption events to AWS EventBridge."""
 
     def __init__(self) -> None:
-        self.bus_name: str = os.getenv("EVENTBRIDGE_BUS_NAME", "nexcart-events")
-        self.source: str = os.getenv("EVENTBRIDGE_SOURCE", "com.nexcart.signals")
-        self.region: str = os.getenv("AWS_REGION", "us-east-1")
+        self.bus_name: str = settings.eventbridge_bus_name
+        self.source: str = settings.eventbridge_source
+        self.region: str = settings.aws_region
         self._client = None
 
     def _get_client(self) -> Any:
         """Lazily initialise the EventBridge boto3 client."""
         if self._client is None:
-            aws_key = os.getenv("AWS_ACCESS_KEY_ID", "")
-            aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+            aws_key = settings.aws_access_key_id
+            aws_secret = settings.aws_secret_access_key
 
             if not aws_key or not aws_secret:
                 return None

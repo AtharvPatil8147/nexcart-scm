@@ -12,7 +12,6 @@ Nodes:
 
 import asyncio
 import json
-import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -24,6 +23,7 @@ from backend.database.collections import CUSTOMER_PROFILES, NUDGE_CAMPAIGNS, SKU
 from backend.database.connection import get_db
 from backend.services.notification import NotificationService
 from backend.utils.logger import get_logger
+from backend.core.settings import settings
 
 logger = get_logger("nudge_agent")
 
@@ -188,9 +188,9 @@ async def _generate_copy_bedrock(
     last_purchase_date: str,
 ) -> Optional[dict]:
     """Call Bedrock to generate personalised offer copy with retry."""
-    model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-opus-4-5")
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID", "")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    model_id = settings.bedrock_model_id
+    aws_key = settings.aws_access_key_id
+    aws_secret = settings.aws_secret_access_key
 
     if not aws_key or not aws_secret:
         return None
@@ -201,7 +201,7 @@ async def _generate_copy_bedrock(
 
         llm = ChatBedrock(
             model_id=model_id,
-            region_name=os.getenv("AWS_REGION", "us-east-1"),
+            region_name=settings.aws_region,
             credentials_profile_name=None,
             model_kwargs={"temperature": 0.7, "max_tokens": 512},
         )

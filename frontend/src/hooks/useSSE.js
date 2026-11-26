@@ -22,7 +22,9 @@ export default function useSSE(url) {
     }
 
     try {
-      const es = new EventSource(url);
+      const token = localStorage.getItem('nexcart_access_token');
+      const separator = url.includes('?') ? '&' : '?';
+      const es = new EventSource(token ? `${url}${separator}access_token=${encodeURIComponent(token)}` : url);
       eventSourceRef.current = es;
 
       es.onopen = () => {

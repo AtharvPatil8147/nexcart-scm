@@ -2,12 +2,13 @@
 # NexCart — .gitignore
 # ══════════════════════════════════════════════════════════════════
 
-# ── Environment & Secrets ─────────────────────────────────────────
+# Environment & Secrets
 .env
+.env.*
+!.env.example
 .env.local
-.env.*.local
 
-# ── Python ────────────────────────────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -16,22 +17,19 @@ __pycache__/
 *.egg
 dist/
 build/
-venv/
-.venv/
+.venv*/
+venv*/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 htmlcov/
 .coverage
 
-# ── Node.js / Frontend ───────────────────────────────────────────
+# Node.js
 node_modules/
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
 .vite/
 
-# ── IDE / OS ──────────────────────────────────────────────────────
+# IDE / OS
 .DS_Store
 Thumbs.db
 .vscode/
@@ -40,9 +38,10 @@ Thumbs.db
 *.swo
 *~
 
-# ── Docker ────────────────────────────────────────────────────────
+# Docker
 docker-compose.override.yml
 
-# ── Logs ──────────────────────────────────────────────────────────
+# Logs
 *.log
 logs/
+npm-debug.log*

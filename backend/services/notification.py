@@ -5,7 +5,6 @@ Sends nudge notifications via Firebase Cloud Messaging (push)
 and aiosmtplib (email). Gracefully degrades if keys are missing.
 """
 
-import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Optional
@@ -13,6 +12,7 @@ from typing import Any, Optional
 import httpx
 
 from backend.utils.logger import get_logger
+from backend.core.settings import settings
 
 logger = get_logger("notification")
 
@@ -95,11 +95,11 @@ class NotificationService:
     """Sends push and email notifications for nudge campaigns."""
 
     def __init__(self) -> None:
-        self.firebase_key: str = os.getenv("FIREBASE_SERVER_KEY", "")
-        self.smtp_host: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        self.smtp_port: int = int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_user: str = os.getenv("SMTP_USER", "")
-        self.smtp_password: str = os.getenv("SMTP_PASSWORD", "")
+        self.firebase_key: str = settings.firebase_server_key
+        self.smtp_host: str = settings.smtp_host
+        self.smtp_port: int = settings.smtp_port
+        self.smtp_user: str = settings.smtp_user
+        self.smtp_password: str = settings.smtp_password
 
     async def send_push(
         self,

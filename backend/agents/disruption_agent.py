@@ -12,7 +12,6 @@ Nodes:
 
 import asyncio
 import json
-import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -27,6 +26,7 @@ from backend.services.shipping_service import ShippingService
 from backend.services.weather_service import WeatherService
 from backend.utils.logger import get_logger
 from backend.utils.risk_scorer import RiskScorer
+from backend.core.settings import settings
 
 logger = get_logger("disruption_agent")
 
@@ -123,10 +123,10 @@ async def _call_bedrock(signals_text: str) -> Optional[dict]:
     Call AWS Bedrock to analyse signals. Retries 3 times with
     exponential backoff. Returns parsed JSON or None on failure.
     """
-    model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-opus-4-5")
-    region = os.getenv("AWS_REGION", "us-east-1")
-    aws_key = os.getenv("AWS_ACCESS_KEY_ID", "")
-    aws_secret = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    model_id = settings.bedrock_model_id
+    region = settings.aws_region
+    aws_key = settings.aws_access_key_id
+    aws_secret = settings.aws_secret_access_key
 
     if not aws_key or not aws_secret:
         logger.warning("AWS credentials missing — skipping Bedrock call")
@@ -579,7 +579,7 @@ def start_disruption_scheduler() -> None:
 
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-    interval = int(os.getenv("SIGNAL_POLL_INTERVAL_SECONDS", "300"))
+    interval = settings.signal_poll_interval_seconds
 
     _scheduler = AsyncIOScheduler()
     _scheduler.add_job(

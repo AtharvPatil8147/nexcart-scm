@@ -5,7 +5,6 @@ Handles database lifecycle: connect, disconnect, ping, and
 index creation for all 5 collections.
 """
 
-import os
 import time
 from typing import Optional
 
@@ -19,15 +18,17 @@ from backend.database.collections import (
     NUDGE_CAMPAIGNS,
     SIGNAL_LOGS,
     SKUS,
+    USERS,
 )
+from backend.core.settings import settings
 
 # ══════════════════════════════════════════════════════════════════
 # USER ENTRY POINT — paste your Atlas connection string in .env
 # ══════════════════════════════════════════════════════════════════
-MONGODB_URI: Optional[str] = os.getenv("MONGODB_URI")
+MONGODB_URI: Optional[str] = settings.mongodb_uri
 # ↑ USER ENTRY POINT: set MONGODB_URI in your .env file
 
-MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "nexcart")
+MONGODB_DB_NAME: str = settings.mongodb_db_name
 
 # ── Global references (populated by connect_to_mongo) ─────────────
 client: Optional[AsyncIOMotorClient] = None
@@ -38,7 +39,7 @@ async def connect_to_mongo() -> None:
     """Establish MongoDB connection and create all required indexes."""
     global client, db
 
-    uri = MONGODB_URI or os.getenv("MONGODB_URI")
+    uri = MONGODB_URI
     if not uri:
         raise ConnectionFailure(
             "\n══════════════════════════════════════════════════════════\n"
@@ -131,6 +132,9 @@ async def _create_indexes() -> None:
     # signal_logs: descending on processed_at
     sig_col = db[SIGNAL_LOGS]
     await sig_col.create_index([("processed_at", pymongo.DESCENDING)], name="idx_processed_at_desc")
+
+    users_col = db[USERS]
+    await users_col.create_index([("email", pymongo.ASCENDING)], unique=True, name="idx_user_email_unique")
 
     print("✓ All collection indexes ready")
 

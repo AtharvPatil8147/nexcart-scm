@@ -21,6 +21,12 @@ const NAV_ITEMS = [
 
 export default function Sidebar({ collapsed, onToggle }) {
   const location = useLocation();
+  const user = JSON.parse(localStorage.getItem('nexcart_user') || '{}');
+  const visibleItems = NAV_ITEMS.filter(({ path }) => {
+    if (path === '/nudges') return ['campaign_manager', 'platform_admin'].includes(user.role);
+    if (path === '/analytics') return ['operations_manager', 'supply_analyst', 'campaign_manager', 'platform_admin'].includes(user.role);
+    return true;
+  });
 
   return (
     <aside
@@ -47,7 +53,7 @@ export default function Sidebar({ collapsed, onToggle }) {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
+        {visibleItems.map(({ path, label, icon: Icon }) => {
           const isActive = location.pathname === path;
           return (
             <NavLink

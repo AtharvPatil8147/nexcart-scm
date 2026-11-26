@@ -5,7 +5,6 @@ Monitors major shipping lanes for disruption signals.
 Always returns mock data if MARINE_TRAFFIC_API_KEY is missing.
 """
 
-import os
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -13,6 +12,7 @@ from typing import Any
 import httpx
 
 from backend.utils.logger import get_logger
+from backend.core.settings import settings
 
 logger = get_logger("shipping_service")
 
@@ -69,7 +69,7 @@ class ShippingService:
     """Fetches and normalises shipping lane disruption signals."""
 
     def __init__(self) -> None:
-        self.api_key: str = os.getenv("MARINE_TRAFFIC_API_KEY", "")
+        self.api_key: str = settings.marine_traffic_api_key
 
     async def fetch_signals(self) -> list[dict[str, Any]]:
         """

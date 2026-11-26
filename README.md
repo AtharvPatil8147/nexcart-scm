@@ -123,15 +123,27 @@ Open `.env` and fill in your credentials:
 
 ### Step 3: Install Dependencies
 
-```bash
-make install
+Run the one-click setup script for your platform:
+
+```powershell
+.\setup.bat
 ```
 
-Or manually:
 ```bash
-cd backend && pip install -r requirements.txt
-cd ../frontend && npm install
+sh ./setup.sh
 ```
+
+The script checks for Python 3.11+, Node.js 18+, and npm; installs backend packages into `.venv`; installs frontend packages from the lockfile; and creates `.env` from `.env.example` if needed. Fill in the required credentials in `.env` before starting the app.
+
+Alternatively, install dependencies manually:
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install -r backend/requirements.txt
+npm --prefix frontend ci
+```
+
+On Windows, use `.venv\Scripts\python.exe` instead of `.venv/bin/python`.
 
 ### Step 4: Seed the Database
 
