@@ -4,13 +4,14 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white)
 ![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)
-![AWS Bedrock](https://img.shields.io/badge/AWS-Bedrock-FF9900?logo=amazonaws&logoColor=white)
+![Groq](https://img.shields.io/badge/LLM-Groq-000000)
+![Gemini](https://img.shields.io/badge/LLM-Gemini-4285F4)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Agentic_AI-7C6DDD)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
 > **Predict shelf gaps before they happen. Recover demand through personalised offers.**
 
-NexCart is an AI-powered supply-chain disruption radar that monitors real-time signals from news, weather, and shipping sources, predicts which SKUs are at risk using a LangGraph agent with AWS Bedrock, and automatically generates hyper-personalised restock nudges to affected customers — recovering lost revenue before it happens.
+NexCart is an AI-powered supply-chain disruption radar that monitors real-time signals from news, weather, and shipping sources, predicts which SKUs are at risk using a LangGraph agent with Groq/Gemini, and automatically generates hyper-personalised restock nudges to affected customers — recovering lost revenue before it happens.
 
 ---
 
@@ -53,7 +54,7 @@ NexCart is an AI-powered supply-chain disruption radar that monitors real-time s
 ## Features
 
 - 🔍 **Real-Time Signal Monitoring** — Ingests disruption signals from news, weather, and shipping APIs
-- 🤖 **AI Risk Prediction** — LangGraph agent with AWS Bedrock (Claude) analyses signals and predicts affected SKUs
+- 🤖 **AI Risk Prediction** — LangGraph agent routes structured analysis requests across Groq and Gemini
 - 📊 **Risk Scoring** — Composite risk scores (0-100) with automatic risk level classification
 - 💬 **GenAI Personalisation** — Generates warm, personalised customer messages with substitute product recommendations
 - 📱 **Multi-Channel Nudges** — Push notifications (FCM) and email campaigns with conversion tracking
@@ -89,7 +90,7 @@ NexCart is an AI-powered supply-chain disruption radar that monitors real-time s
    
    *[Screenshot: Create database user]*
 
-4. **Whitelist Your IP** — Go to **Network Access** → Add IP Address → "Allow Access from Anywhere" (for development).
+4. **Allow Your App's IP** — Go to **Network Access** → Add IP Address → add your current public IP for local development, or your deployment server's fixed egress IP. Avoid leaving access open to everyone.
    
    *[Screenshot: Network access]*
 
@@ -97,7 +98,25 @@ NexCart is an AI-powered supply-chain disruption radar that monitors real-time s
    
    *[Screenshot: Connection string]*
 
-Replace `<password>` with your database user's password in the connection string.
+Replace `<password>` with your database user's password (URL-encode special characters). Put the completed URI in `.env` as `MONGODB_URI=...` and set `MONGODB_DB_NAME=nexcart`. Keep `.env` private and out of Git.
+
+### Move existing local data to Atlas
+
+Install MongoDB Database Tools, then stop the backend briefly to avoid writes during the copy. The Docker Compose local database is exposed on `localhost:27017`.
+
+```powershell
+docker compose stop nexcart-backend
+mongodump --uri="mongodb://localhost:27017/nexcart" --out=".\mongo-backup"
+mongorestore --uri="<Atlas URI ending in /nexcart>" --nsInclude="nexcart.*" ".\mongo-backup\nexcart"
+```
+
+Restore into a new, empty Atlas database. In `docker-compose.yml`, the backend uses `MONGODB_URI` from `.env` when set and otherwise defaults to the local MongoDB container. Recreate the backend after setting the Atlas URI:
+
+```powershell
+docker compose up -d --force-recreate nexcart-backend
+```
+
+Check `http://localhost:8000/api/health/db` and verify the collections and document counts in Atlas Data Explorer before deleting or changing the local database volume. The local volume is kept as a rollback copy.
 
 ---
 
@@ -118,7 +137,8 @@ cp .env.example .env
 
 Open `.env` and fill in your credentials:
 - **MONGODB_URI** — Your Atlas connection string (required)
-- **AWS credentials** — For Bedrock AI (optional, falls back to heuristic)
+- **GROQ_API_KEY** and **GEMINI_API_KEY** — Optional LLM providers; either or both can be configured. Failed or unavailable providers fall back to heuristic scoring and local message templates.
+- **AWS credentials** — Optional for EventBridge only; not required for LLM features
 - **API keys** — For NewsAPI, OpenWeatherMap, MarineTraffic (optional, uses mock data)
 
 ### Step 3: Install Dependencies
@@ -208,11 +228,11 @@ docker-compose up
 
 ### Layer 1: Disruption Prediction Agent
 
-The disruption agent runs on a configurable schedule (default: every 5 minutes). It pulls real-time signals from news, weather, and shipping APIs, then uses AWS Bedrock (Claude) to analyse the combined signal data and identify which SKUs might be affected. The AI estimates disruption probability, impact duration, and generates structured reasoning. Risk scores are updated in MongoDB, and high-risk SKUs are flagged via Amazon EventBridge, which triggers Layer 2. When Bedrock is unavailable, the agent falls back to a heuristic-based risk scorer that uses stock-to-reorder-point ratios and signal severity weights.
+The disruption agent runs on a configurable schedule (default: every 5 minutes). It pulls real-time signals from news, weather, and shipping APIs, then tries Groq and Gemini in a rotating order to identify affected SKUs and generate structured reasoning. If both providers fail or are unavailable, it falls back to the heuristic risk scorer using stock-to-reorder-point ratios and signal severity weights. High-risk SKUs are flagged via Amazon EventBridge, which triggers Layer 2.
 
 ### Layer 2: GenAI Personalisation Agent
 
-When triggered by a disruption event, this agent identifies customers who recently purchased at-risk products, finds safe substitute SKUs in the same category, and calls AWS Bedrock to generate personalised restock messages. Each message mentions the customer by name, references their purchase history, and suggests a relevant alternative — all in a warm, helpful tone. Messages are dispatched via push notification or email based on the customer's profile, and campaign outcomes (sent → opened → converted) are tracked for analytics.
+When triggered by a disruption event, this agent identifies customers who recently purchased at-risk products, finds safe substitute SKUs in the same category, and requests generic copy from Groq or Gemini. Identical LLM requests are cached for five minutes, and copy is reused for customers with the same product/substitute pair, then personalized locally; customer names, email addresses, and purchase histories are not sent to LLM providers. If both providers fail, a local message template is used. Messages are dispatched via push notification or email based on the customer's profile, and campaign outcomes (sent → opened → converted) are tracked for analytics.
 
 ---
 
@@ -241,13 +261,15 @@ Go to **Dashboard** → observe SKU risk scores updating in real-time. Click **"
 
 2. **World Economic Forum** (2023). *"Global Risks Report 2023."* — Supply chain instability ranked among the top 10 global risks for 5 consecutive years.
 
-3. **AWS Documentation**. *"Amazon Bedrock — Build and scale generative AI applications."* [https://docs.aws.amazon.com/bedrock/](https://docs.aws.amazon.com/bedrock/)
+3. **Groq Documentation**. *"Groq API — Fast inference for LLM applications."* [https://console.groq.com/docs/](https://console.groq.com/docs/)
 
-4. **LangGraph Documentation**. *"Build stateful, multi-actor applications with LLMs."* [https://langchain-ai.github.io/langgraph/](https://langchain-ai.github.io/langgraph/)
+4. **Google Gemini API**. *"Gemini Developer API documentation."* [https://ai.google.dev/gemini-api/docs](https://ai.google.dev/gemini-api/docs)
 
-5. **MongoDB Atlas**. *"Developer Data Platform."* [https://www.mongodb.com/atlas](https://www.mongodb.com/atlas)
+5. **LangGraph Documentation**. *"Build stateful, multi-actor applications with LLMs."* [https://langchain-ai.github.io/langgraph/](https://langchain-ai.github.io/langgraph/)
 
-6. **Chopra, S. & Meindl, P.** (2016). *Supply Chain Management: Strategy, Planning, and Operation.* 6th Edition, Pearson.
+6. **MongoDB Atlas**. *"Developer Data Platform."* [https://www.mongodb.com/atlas](https://www.mongodb.com/atlas)
+
+7. **Chopra, S. & Meindl, P.** (2016). *Supply Chain Management: Strategy, Planning, and Operation.* 6th Edition, Pearson.
 
 ---
 
@@ -267,7 +289,7 @@ Go to **Dashboard** → observe SKU risk scores updating in real-time. Click **"
 
 ```
 Backend:   Python 3.11 · FastAPI · Motor (async MongoDB) · LangGraph · LangChain
-AI:        AWS Bedrock (Claude) · Composite Risk Scoring · GenAI Personalisation
+AI:        Groq · Gemini · Heuristic Risk Scoring · GenAI Personalisation
 Database:  MongoDB Atlas · 5 Collections · Async Indexes
 Frontend:  React 18 · Vite · TailwindCSS · Recharts · React Query · Lucide Icons
 Infra:     Docker Compose · APScheduler · Amazon EventBridge
@@ -277,4 +299,4 @@ Channels:  Firebase Cloud Messaging (Push) · SMTP (Email)
 ---
 
 *NexCart — Final Year Project | AI Supply-Chain Disruption Radar*
-*Built with Claude Opus · LangGraph · AWS Bedrock · MongoDB Atlas*
+*Built with Groq · Gemini · LangGraph · MongoDB Atlas*

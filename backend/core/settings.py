@@ -15,7 +15,10 @@ class Settings:
     aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
     aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     aws_region: str = os.getenv("AWS_REGION", "us-east-1")
-    bedrock_model_id: str = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-opus-4-5")
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    groq_model_id: str = os.getenv("GROQ_MODEL_ID", "openai/gpt-oss-20b")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    gemini_model_id: str = os.getenv("GEMINI_MODEL_ID", "gemini-3.5-flash-lite")
     eventbridge_bus_name: str = os.getenv("EVENTBRIDGE_BUS_NAME", "nexcart-events")
     eventbridge_source: str = os.getenv("EVENTBRIDGE_SOURCE", "com.nexcart.signals")
     news_api_key: str = os.getenv("NEWS_API_KEY", "")
@@ -70,6 +73,11 @@ async def startup_health_check() -> None:
     else:
         logger.error("MongoDB ping failed — %s", db_status.get("detail", "unknown error"))
     if not (settings.aws_access_key_id and settings.aws_secret_access_key):
-        logger.warning("AWS credentials not configured; Bedrock and EventBridge are disabled")
+        logger.warning("AWS credentials not configured; EventBridge is disabled")
+    if not (settings.groq_api_key or settings.gemini_api_key):
+        logger.warning(
+            "No LLM provider keys configured; heuristic risk scoring and "
+            "template nudges remain enabled"
+        )
     if not settings.news_api_key:
         logger.warning("NEWS_API_KEY not configured; Google News RSS remains available")

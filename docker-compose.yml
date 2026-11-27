@@ -27,7 +27,8 @@ services:
     env_file:
       - .env
     environment:
-      - MONGODB_URI=mongodb://nexcart-mongo:27017
+      MONGODB_URI: ${MONGODB_URI:-mongodb://nexcart-mongo:27017}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-nexcart}
     volumes:
       - ./backend:/nexcart/backend
     depends_on:
