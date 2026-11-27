@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Bell, LogOut } from 'lucide-react';
 import MongoStatus from './MongoStatus';
+import { useAuth } from '../auth/AuthContext';
 
 export default function TopBar({ pageTitles = {} }) {
   const location = useLocation();
@@ -18,12 +19,11 @@ export default function TopBar({ pageTitles = {} }) {
     return () => clearInterval(timer);
   }, []);
 
-  const pageTitle = pageTitles[location.pathname] || 'NexCart';
+  const pageTitle = pageTitles[location.pathname] || Object.entries(pageTitles).find(([path]) => location.pathname.startsWith(`${path}/`))?.[1] || 'NexCart';
   const clockStr = time.toLocaleTimeString('en-US', { hour12: false });
-  const user = JSON.parse(localStorage.getItem('nexcart_user') || '{}');
+  const { user, logout: authLogout } = useAuth();
   const logout = () => {
-    localStorage.removeItem('nexcart_access_token');
-    localStorage.removeItem('nexcart_user');
+    authLogout();
     navigate('/login', { replace: true });
   };
 
@@ -51,7 +51,7 @@ export default function TopBar({ pageTitles = {} }) {
           <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-accent-danger animate-pulse-dot" />
         </button>
 
-        <span className="hidden lg:block text-xs text-text-secondary capitalize">{user.role?.replace('_', ' ')}</span>
+        <span className="hidden lg:block text-xs text-text-secondary capitalize">{user.role || 'user'}</span>
         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-accent-purple/20 text-accent-purple text-xs font-bold" title={user.name || 'NexCart user'}>
           {(user.name || 'NC').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase()}
         </div>

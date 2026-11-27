@@ -39,6 +39,7 @@ client.interceptors.response.use(
 // ── Dashboard & Health ──────────────────────────────────────
 export const getHealth = () => client.get('/health').then(r => r.data);
 export const login = (data) => client.post('/auth/login', data).then(r => r.data);
+export const getCurrentUser = () => client.get('/auth/me').then(r => r.data);
 export const testDbConnection = () => client.get('/health/db').then(r => r.data);
 export const getStats = () => client.get('/dashboard/stats').then(r => r.data);
 
@@ -46,6 +47,7 @@ export const getStats = () => client.get('/dashboard/stats').then(r => r.data);
 export const getSkus = (params = {}) => client.get('/skus', { params }).then(r => r.data);
 export const getSku = (skuId) => client.get(`/skus/${skuId}`).then(r => r.data);
 export const createSku = (data) => client.post('/skus', data).then(r => r.data);
+export const updateSku = (skuId, data) => client.patch(`/skus/${skuId}`, data).then(r => r.data);
 export const overrideSkuRisk = (skuId, data) => client.patch(`/skus/${skuId}/risk`, data).then(r => r.data);
 
 // ── Disruptions ─────────────────────────────────────────────
@@ -72,6 +74,13 @@ export const triggerNudgeAgent = (skuIds = []) => client.post('/agents/run-nudge
 // ── Customers ───────────────────────────────────────────────
 export const getCustomers = (params = {}) => client.get('/customers', { params }).then(r => r.data);
 export const createCustomer = (data) => client.post('/customers', data).then(r => r.data);
+
+export const getUsers = (params = {}) => client.get('/users', { params }).then(r => r.data);
+export const createUser = (data) => client.post('/users', data).then(r => r.data);
+export const updateUser = (id, data) => client.patch(`/users/${id}`, data).then(r => r.data);
+export const setUserStatus = (id, active) => client.patch(`/users/${id}/status`, { active }).then(r => r.data);
+export const resetUserPassword = (id, password) => client.post(`/users/${id}/reset-password`, { password }).then(r => r.data);
+export const getAuditLogs = (limit = 100) => client.get('/users/audit/logs', { params: { limit } }).then(r => r.data);
 
 export default client;
 

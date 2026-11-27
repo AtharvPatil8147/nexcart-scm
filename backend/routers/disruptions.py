@@ -7,13 +7,15 @@ Endpoints for disruption events management.
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 
 from backend.database.collections import DISRUPTION_EVENTS
 from backend.database.connection import get_db
 from backend.database.models import DisruptionEventBase, DisruptionEventResponse
 from backend.utils.logger import get_logger
+from backend.security import get_current_user
+from backend.audit import record_audit
 
 logger = get_logger("router.disruptions")
 router = APIRouter(tags=["Disruptions"])
@@ -94,7 +96,7 @@ async def get_disruption(event_id: str):
 
 
 @router.post("/disruptions", response_model=MessageResponse, status_code=201)
-async def create_disruption(event: DisruptionEventBase):
+async def create_disruption(event: DisruptionEventBase, current_user: dict = Depends(get_current_user)):
     """Manually create a disruption event."""
     try:
         database = get_db()
@@ -107,6 +109,7 @@ async def create_disruption(event: DisruptionEventBase):
             doc["severity"] = doc["severity"].value
 
         result = await database[DISRUPTION_EVENTS].insert_one(doc)
+        await record_audit(current_user, "disruption.created", "disruption", event.event_id)
 
         return MessageResponse(
             message=f"Disruption event '{event.event_id}' created",

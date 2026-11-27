@@ -19,6 +19,7 @@ from backend.database.collections import (
     SIGNAL_LOGS,
     SKUS,
     USERS,
+    AUDIT_LOGS,
 )
 from backend.core.settings import settings
 
@@ -135,6 +136,12 @@ async def _create_indexes() -> None:
 
     users_col = db[USERS]
     await users_col.create_index([("email", pymongo.ASCENDING)], unique=True, name="idx_user_email_unique")
+    await users_col.create_index([("role", pymongo.ASCENDING)], name="idx_user_role")
+    await users_col.create_index([("active", pymongo.ASCENDING)], name="idx_user_active")
+
+    audit_col = db[AUDIT_LOGS]
+    await audit_col.create_index([("timestamp", pymongo.DESCENDING)], name="idx_audit_timestamp")
+    await audit_col.create_index([("actor_user_id", pymongo.ASCENDING)], name="idx_audit_actor")
 
     print("✓ All collection indexes ready")
 

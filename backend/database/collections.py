@@ -12,6 +12,7 @@ CUSTOMER_PROFILES: str = "customer_profiles"
 NUDGE_CAMPAIGNS: str = "nudge_campaigns"
 SIGNAL_LOGS: str = "signal_logs"
 USERS: str = "users"
+AUDIT_LOGS: str = "audit_logs"
 
 # ── All collections as a list (used by connection.py for index setup)
 ALL_COLLECTIONS: list[str] = [
@@ -21,6 +22,7 @@ ALL_COLLECTIONS: list[str] = [
     NUDGE_CAMPAIGNS,
     SIGNAL_LOGS,
     USERS,
+    AUDIT_LOGS,
 ]
 
 print("✓ collections.py complete")

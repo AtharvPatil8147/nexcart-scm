@@ -79,6 +79,15 @@ async def test_health_version_is_string(client):
 
 
 @pytest.mark.asyncio
+async def test_invalid_token_returns_401_not_500(client):
+    response = await client.get(
+        "/api/auth/me",
+        headers={"Authorization": "Bearer invalid.token.value"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_db_health_has_latency_on_success(client):
     """If DB is connected, the response should include latency_ms."""
     response = await client.get("/api/health/db")

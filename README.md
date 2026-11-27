@@ -255,6 +255,18 @@ Go to **Dashboard** → observe SKU risk scores updating in real-time. Click **"
 
 ---
 
+## Role-Based Workspaces
+
+NexCart provides three role-specific experiences. Each account is routed to its own landing page after authentication:
+
+| Role | Workspace | Landing page | Focus |
+|------|-----------|--------------|-------|
+| `admin` | Governance | `/admin/dashboard` | User administration, access grants, audit history, platform health, activity, and settings |
+| `manager` | Operations | `/manager/dashboard` | Inventory priorities, SKU management, disruptions, signal monitoring, and operational analytics |
+| `viewer` | Intelligence | `/intelligence/overview` | Read-only risk, disruption, signal, and analytics exploration |
+
+Use the development demo-account buttons on the login screen to fill in the available test accounts. Demo accounts are only provisioned when `APP_ENV` is not `production`. Backend permissions remain authoritative; navigating directly to a restricted workspace is denied.
+
 ## Academic References
 
 1. **McKinsey & Company** (2020). *"Risk, resilience, and rebalancing in global value chains."* — Supply chain disruptions cost global companies $310 billion annually.

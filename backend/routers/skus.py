@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 
 from backend.database.collections import DISRUPTION_EVENTS, SIGNAL_LOGS, SKUS
@@ -18,6 +18,8 @@ from backend.database.models import (
 )
 from backend.utils.logger import get_logger
 from backend.utils.risk_scorer import RiskScorer
+from backend.security import get_current_user
+from backend.audit import record_audit
 
 logger = get_logger("router.skus")
 router = APIRouter(tags=["SKUs"])
@@ -40,6 +42,13 @@ class RiskOverrideRequest(BaseModel):
     risk_score: int = Field(..., ge=0, le=100, description="New risk score")
     risk_level: RiskLevel = Field(..., description="New risk level")
     reason: str = Field("Manual override", description="Reason for override")
+
+class SKUUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    category: Optional[str] = Field(None, min_length=1, max_length=100)
+    supplier_country: Optional[str] = Field(None, min_length=1, max_length=100)
+    current_stock: Optional[int] = Field(None, ge=0)
+    reorder_point: Optional[int] = Field(None, ge=0)
 
 class MessageResponse(BaseModel):
     message: str
@@ -128,7 +137,7 @@ async def get_sku(sku_id: str):
 
 
 @router.post("/skus", response_model=MessageResponse, status_code=201)
-async def create_sku(sku: SKUBase):
+async def create_sku(sku: SKUBase, current_user: dict = Depends(get_current_user)):
     """Create a new SKU."""
     try:
         database = get_db()
@@ -141,6 +150,7 @@ async def create_sku(sku: SKUBase):
 
         doc = sku.model_dump()
         result = await database[SKUS].insert_one(doc)
+        await record_audit(current_user, "sku.created", "sku", sku.sku_id)
 
         return MessageResponse(
             message=f"SKU '{sku.sku_id}' created successfully",
@@ -153,8 +163,21 @@ async def create_sku(sku: SKUBase):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@router.patch("/skus/{sku_id}", response_model=SKUResponse)
+async def update_sku(sku_id: str, update: SKUUpdateRequest, current_user: dict = Depends(get_current_user)):
+    fields = update.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=422, detail="At least one SKU field must be provided")
+    fields["last_updated"] = datetime.now(timezone.utc)
+    result = await get_db()[SKUS].update_one({"sku_id": sku_id}, {"$set": fields})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail=f"SKU '{sku_id}' not found")
+    await record_audit(current_user, "sku.updated", "sku", sku_id, {"fields": list(fields.keys())})
+    return _serialize_doc(await get_db()[SKUS].find_one({"sku_id": sku_id}))
+
+
 @router.patch("/skus/{sku_id}/risk", response_model=SKUResponse)
-async def override_risk(sku_id: str, override: RiskOverrideRequest):
+async def override_risk(sku_id: str, override: RiskOverrideRequest, current_user: dict = Depends(get_current_user)):
     """Manually override risk level and score, log to signal_logs."""
     try:
         database = get_db()
@@ -194,6 +217,7 @@ async def override_risk(sku_id: str, override: RiskOverrideRequest):
         })
 
         updated = await database[SKUS].find_one({"sku_id": sku_id})
+        await record_audit(current_user, "sku.risk_overridden", "sku", sku_id, {"old_score": old_score, "new_score": override.risk_score})
         return _serialize_doc(updated)
 
     except HTTPException:
