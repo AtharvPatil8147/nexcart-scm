@@ -2,7 +2,7 @@
 NexCart — Layer 2: GenAI Personalisation Agent (LangGraph)
 =============================================================
 LangGraph StateGraph that loads at-risk customers, finds substitute
-SKUs, generates personalised offer copy via AWS Bedrock, dispatches
+SKUs, generates personalised offer copy via Groq/Gemini, dispatches
 nudge notifications, and logs campaigns to MongoDB.
 
 Nodes:
@@ -10,8 +10,6 @@ Nodes:
       -> dispatch_nudges -> log_campaign
 """
 
-import asyncio
-import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -21,9 +19,9 @@ from langgraph.graph import END, StateGraph
 
 from backend.database.collections import CUSTOMER_PROFILES, NUDGE_CAMPAIGNS, SKUS
 from backend.database.connection import get_db
+from backend.services.llm_provider import llm_router
 from backend.services.notification import NotificationService
 from backend.utils.logger import get_logger
-from backend.core.settings import settings
 
 logger = get_logger("nudge_agent")
 
@@ -168,100 +166,55 @@ async def find_substitutes(state: NudgeState) -> NudgeState:
 
 
 # ══════════════════════════════════════════════════════════════════
-# NODE 3: GENERATE OFFER COPY (Bedrock)
+# NODE 3: GENERATE OFFER COPY (Groq/Gemini with local template fallback)
 # ══════════════════════════════════════════════════════════════════
 
-BEDROCK_SYSTEM_PROMPT = (
-    "You are NexCart's personalisation engine. Given a customer's "
-    "purchase history and an at-risk product, write a warm, concise "
-    "personalised message (max 80 words) offering a substitute product. "
-    "Mention the customer's name, why they might need this now, and "
-    "make it feel helpful not alarming. Return ONLY valid JSON: "
-    '{"subject": "string", "body": "string", "cta_text": "string"}'
+NUDGE_SYSTEM_PROMPT = (
+    "Write concise, warm restock message copy (maximum 80 words) using only "
+    "the product and substitute details supplied. Do not invent facts, "
+    "include personal data, or address a named customer. Return only a JSON "
+    'object with string fields "subject", "body", and "cta_text".'
 )
 
 
-async def _generate_copy_bedrock(
-    customer_name: str,
+async def _generate_copy_llm(
     at_risk_sku_name: str,
     substitute_details: str,
-    last_purchase_date: str,
-) -> Optional[dict]:
-    """Call Bedrock to generate personalised offer copy with retry."""
-    model_id = settings.bedrock_model_id
-    aws_key = settings.aws_access_key_id
-    aws_secret = settings.aws_secret_access_key
-
-    if not aws_key or not aws_secret:
+) -> Optional[dict[str, str]]:
+    """Request reusable generic copy without sending customer information."""
+    result = await llm_router.generate_json(
+        NUDGE_SYSTEM_PROMPT,
+        (
+            f"At-risk product: {at_risk_sku_name}\n"
+            f"Substitute product details: {substitute_details}"
+        ),
+        temperature=0.4,
+        max_tokens=256,
+    )
+    if not result:
         return None
 
-    try:
-        from langchain_aws import ChatBedrock
-        from langchain_core.messages import HumanMessage, SystemMessage
-
-        llm = ChatBedrock(
-            model_id=model_id,
-            region_name=settings.aws_region,
-            credentials_profile_name=None,
-            model_kwargs={"temperature": 0.7, "max_tokens": 512},
-        )
-
-        user_prompt = (
-            f"Customer name: {customer_name}\n"
-            f"At-risk product: {at_risk_sku_name}\n"
-            f"Substitute product details: {substitute_details}\n"
-            f"Last purchase date: {last_purchase_date}\n"
-        )
-
-        messages = [
-            SystemMessage(content=BEDROCK_SYSTEM_PROMPT),
-            HumanMessage(content=user_prompt),
-        ]
-
-        # Retry logic: 3 attempts with exponential backoff
-        for attempt in range(3):
-            try:
-                response = await asyncio.to_thread(llm.invoke, messages)
-                content = response.content.strip()
-
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0].strip()
-
-                return json.loads(content)
-
-            except json.JSONDecodeError:
-                logger.warning(f"Bedrock JSON parse error (attempt {attempt+1})")
-            except Exception as exc:
-                wait_time = 2 ** attempt
-                logger.warning(
-                    f"Bedrock call failed (attempt {attempt+1}): {exc}. "
-                    f"Retrying in {wait_time}s..."
-                )
-                await asyncio.sleep(wait_time)
-
-    except ImportError:
-        logger.error("langchain-aws not installed")
-    except Exception as exc:
-        logger.error(f"Bedrock setup error: {exc}")
-
-    return None
+    required_fields = ("subject", "body", "cta_text")
+    if any(
+        not isinstance(result.get(field), str) or not result[field].strip()
+        for field in required_fields
+    ):
+        return None
+    if len(result["subject"]) > 160 or len(result["body"]) > 600 or len(result["cta_text"]) > 100:
+        return None
+    return {field: result[field].strip() for field in required_fields}
 
 
 def _generate_copy_fallback(
-    customer_name: str,
     at_risk_sku_name: str,
     substitute_name: str,
 ) -> dict:
     """Generate fallback offer copy without LLM."""
     return {
-        "subject": f"Quick heads-up about your {at_risk_sku_name}, {customer_name}",
+        "subject": f"Supply update: {at_risk_sku_name}",
         "body": (
-            f"Hi {customer_name}, we noticed that {at_risk_sku_name} you love "
-            f"may face a brief supply delay. Great news — we found "
-            f"{substitute_name} as a perfect alternative! It's in stock and "
-            f"ready to ship. We wanted to let you know before it sells out."
+            f"{at_risk_sku_name} may face a supply delay. "
+            f"{substitute_name} is an available alternative."
         ),
         "cta_text": f"Shop {substitute_name} Now",
     }
@@ -270,6 +223,7 @@ def _generate_copy_fallback(
 async def generate_offer_copy(state: NudgeState) -> NudgeState:
     """Generate personalised offer messages for each customer-SKU pair."""
     logger.info("Node: generate_offer_copy — creating personalised messages...")
+    copy_cache: dict[tuple[str, str], dict[str, str]] = {}
 
     for customer in state.affected_customers:
         customer_name = customer.get("name", "Customer")
@@ -292,25 +246,20 @@ async def generate_offer_copy(state: NudgeState) -> NudgeState:
             at_risk_name = at_risk_sku.get("name", sku_id)
             sub_name = substitute.get("name", substitute["sku_id"])
 
-            purchase_date = purchase.get("date", "")
-            if hasattr(purchase_date, "isoformat"):
-                purchase_date = purchase_date.isoformat()
-
-            # Try Bedrock, fallback to template
-            copy = await _generate_copy_bedrock(
-                customer_name=customer_name,
-                at_risk_sku_name=at_risk_name,
-                substitute_details=(
-                    f"{sub_name} (SKU: {substitute['sku_id']}, "
-                    f"stock: {substitute.get('current_stock', 'N/A')})"
-                ),
-                last_purchase_date=str(purchase_date),
-            )
-
-            if copy is None:
-                copy = _generate_copy_fallback(
-                    customer_name, at_risk_name, sub_name
+            cache_key = (sku_id, substitute["sku_id"])
+            if cache_key not in copy_cache:
+                copy = await _generate_copy_llm(
+                    at_risk_sku_name=at_risk_name,
+                    substitute_details=(
+                        f"{sub_name} (SKU: {substitute['sku_id']}, "
+                        f"stock: {substitute.get('current_stock', 'N/A')})"
+                    ),
                 )
+                if copy is None:
+                    copy = _generate_copy_fallback(at_risk_name, sub_name)
+                copy_cache[cache_key] = copy
+
+            copy = copy_cache[cache_key]
 
             state.offer_copies.append({
                 "customer_id": customer.get("customer_id", ""),
@@ -319,9 +268,9 @@ async def generate_offer_copy(state: NudgeState) -> NudgeState:
                 "push_token": customer.get("push_token"),
                 "sku_id": sku_id,
                 "substitute_sku_id": substitute["sku_id"],
-                "subject": copy.get("subject", ""),
-                "body": copy.get("body", ""),
-                "cta_text": copy.get("cta_text", "Shop Now"),
+                "subject": f"{copy['subject']} — {customer_name}",
+                "body": f"Hi {customer_name}, {copy['body']}",
+                "cta_text": copy["cta_text"],
             })
 
     logger.info(f"Generated {len(state.offer_copies)} offer copies")

@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"created_at":{"$numberInt":"-1"}},"name":"idx_created_at_desc"},{"v":{"$numberInt":"2"},"key":{"affected_sku_ids":{"$numberInt":"1"}},"name":"idx_affected_sku_ids"}],"uuid":"a6da357f58544932b3b9566b3e90b32a","collectionName":"disruption_events","type":"collection"}
