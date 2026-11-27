@@ -4,11 +4,9 @@
  * metric summary cards, and top disrupted SKUs table.
  */
 
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   BarChart2, TrendingUp, ShieldAlert, Target,
-  Calendar,
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
@@ -18,20 +16,6 @@ import { getRiskTrend, getNudgeConversion, getStats, getSkus } from '../api/clie
 import StatCard from '../components/StatCard';
 import RiskBadge from '../components/RiskBadge';
 import clsx from 'clsx';
-
-const DATE_RANGES = [
-  { key: '7d', label: '7 Days' },
-  { key: '30d', label: '30 Days' },
-  { key: '90d', label: '90 Days' },
-];
-
-const CATEGORY_COLORS = {
-  Electronics: '#7C6DDD',
-  Apparel: '#EF9F27',
-  Food: '#1D9E75',
-  Pharma: '#E24B4A',
-  'Home Goods': '#3B82F6',
-};
 
 function ChartSkeleton({ height = 300 }) {
   return (
@@ -57,8 +41,6 @@ function CustomTooltip({ active, payload, label }) {
 }
 
 export default function Analytics() {
-  const [dateRange, setDateRange] = useState('30d');
-
   // ── Data Queries ──
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
@@ -81,58 +63,23 @@ export default function Analytics() {
   });
 
   // ── Process Risk Trend Data ──
-  const riskTrend = Array.isArray(riskTrendRaw) ? riskTrendRaw : (riskTrendRaw?.items || []);
-
-  // If we have trend data, format it for the chart
-  const trendChartData = riskTrend.length > 0
-    ? riskTrend.map(item => ({
+  const riskTrend = Array.isArray(riskTrendRaw) ? riskTrendRaw : (riskTrendRaw?.trend || riskTrendRaw?.items || []);
+  const trendChartData = riskTrend.map(item => ({
         date: item.date ? new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
         avg_risk: item.avg_risk_score || 0,
         at_risk: item.at_risk_count || 0,
-      }))
-    : // Generate mock 30-day trend data if API returns empty
-      Array.from({ length: 30 }).map((_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (29 - i));
-        return {
-          date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          Electronics: Math.round(35 + Math.random() * 40),
-          Apparel: Math.round(25 + Math.random() * 30),
-          Food: Math.round(20 + Math.random() * 35),
-          Pharma: Math.round(30 + Math.random() * 45),
-          'Home Goods': Math.round(15 + Math.random() * 25),
-        };
-      });
+      }));
 
-  // Category lines to render
-  const hasCategoryData = trendChartData.length > 0 && trendChartData[0].Electronics !== undefined;
-  const categoryKeys = hasCategoryData ? Object.keys(CATEGORY_COLORS) : [];
-
-  // Conversion bar chart data
   const conversionChartData = [
-    {
-      channel: 'Push',
-      sent: conversionData?.push_sent || conversionData?.sent || Math.round((conversionData?.sent || 0) * 0.6) || 45,
-      opened: conversionData?.push_opened || Math.round((conversionData?.opened || 0) * 0.55) || 28,
-      converted: conversionData?.push_converted || Math.round((conversionData?.converted || 0) * 0.5) || 12,
-    },
-    {
-      channel: 'Email',
-      sent: conversionData?.email_sent || Math.round((conversionData?.sent || 0) * 0.4) || 35,
-      opened: conversionData?.email_opened || Math.round((conversionData?.opened || 0) * 0.45) || 22,
-      converted: conversionData?.email_converted || Math.round((conversionData?.converted || 0) * 0.5) || 8,
-    },
+    { stage: 'Sent', count: conversionData?.sent || 0 },
+    { stage: 'Opened', count: conversionData?.opened || 0 },
+    { stage: 'Converted', count: conversionData?.converted || 0 },
   ];
 
   // Conversion rate
   const convRate = conversionData?.sent > 0
     ? ((conversionData?.converted / conversionData?.sent) * 100).toFixed(1)
     : '0';
-
-  // Revenue protected (estimate)
-  const revenueProtected = stats?.revenue_recovered_7d
-    ? stats.revenue_recovered_7d * 4.3  // ~30-day estimate from 7d data
-    : 0;
 
   // Avg risk score from top SKUs
   const topSkus = topSkuData?.items || [];
@@ -154,38 +101,20 @@ export default function Analytics() {
           </p>
         </div>
 
-        {/* Date Range Selector */}
-        <div className="flex items-center gap-1 p-1 bg-bg-card border border-border rounded-xl">
-          {DATE_RANGES.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setDateRange(key)}
-              className={clsx(
-                'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200',
-                dateRange === key
-                  ? 'bg-accent-purple/15 text-accent-purple'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover'
-              )}
-            >
-              <Calendar className="w-3 h-3" />
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* ── Row 1: Summary Metric Cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
-          label="Revenue Protected (30d)"
-          value={Math.round(revenueProtected)}
+          label="Revenue Recovered (7d)"
+          value={stats?.revenue_recovered_7d || 0}
           unit="USD"
           icon={TrendingUp}
           color="teal"
           loading={statsLoading}
         />
         <StatCard
-          label="Avg Risk Score"
+          label="Avg Risk · Top 5 SKUs"
           value={avgRisk}
           icon={ShieldAlert}
           color="amber"
@@ -204,11 +133,11 @@ export default function Analytics() {
       {/* ── Row 2: 30-Day Risk Trend Line Chart ── */}
       <div className="bg-bg-card border border-border rounded-card p-5">
         <h2 className="text-sm font-semibold text-text-primary mb-4">
-          Risk Score Trend ({dateRange === '7d' ? '7 Days' : dateRange === '90d' ? '90 Days' : '30 Days'})
+          Risk Score Trend (30 Days)
         </h2>
         {trendLoading ? (
           <ChartSkeleton height={320} />
-        ) : (
+        ) : trendChartData.length ? (
           <ResponsiveContainer width="100%" height={320}>
             <LineChart data={trendChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1E1E2E" />
@@ -233,61 +162,28 @@ export default function Analytics() {
                 iconSize={8}
                 wrapperStyle={{ fontSize: '11px', color: '#6E6E8A' }}
               />
-              {hasCategoryData ? (
-                categoryKeys.map((cat) => (
-                  <Line
-                    key={cat}
-                    type="monotone"
-                    dataKey={cat}
-                    name={cat}
-                    stroke={CATEGORY_COLORS[cat]}
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4, strokeWidth: 0 }}
-                  />
-                ))
-              ) : (
-                <>
-                  <Line
-                    type="monotone"
-                    dataKey="avg_risk"
-                    name="Avg Risk Score"
-                    stroke="#7C6DDD"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4, strokeWidth: 0 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="at_risk"
-                    name="At-Risk Count"
-                    stroke="#E24B4A"
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4, strokeWidth: 0 }}
-                  />
-                </>
-              )}
+              <Line type="monotone" dataKey="avg_risk" name="Avg Risk Score" stroke="#7C6DDD" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+              <Line type="monotone" dataKey="at_risk" name="At-Risk Count" stroke="#E24B4A" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
             </LineChart>
           </ResponsiveContainer>
-        )}
+        ) : <p className="py-16 text-center text-xs text-text-secondary">No risk trend data available.</p>}
       </div>
 
       {/* ── Row 3: Conversion Bar Chart + Top Disrupted SKUs ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Nudge Conversion by Channel */}
+        {/* Nudge Conversion Funnel */}
         <div className="bg-bg-card border border-border rounded-card p-5">
           <h2 className="text-sm font-semibold text-text-primary mb-4">
-            Nudge Conversion by Channel
+            Campaign Conversion Funnel
           </h2>
           {conversionLoading ? (
             <ChartSkeleton height={260} />
-          ) : (
+          ) : conversionData?.sent ? (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={conversionChartData} barGap={4}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1E1E2E" />
                 <XAxis
-                  dataKey="channel"
+                  dataKey="stage"
                   tick={{ fontSize: 12, fill: '#6E6E8A' }}
                   tickLine={false}
                   axisLine={{ stroke: '#1E1E2E' }}
@@ -305,12 +201,10 @@ export default function Analytics() {
                   iconSize={8}
                   wrapperStyle={{ fontSize: '11px', color: '#6E6E8A' }}
                 />
-                <Bar dataKey="sent" name="Sent" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="opened" name="Opened" fill="#EF9F27" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="converted" name="Converted" fill="#1D9E75" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" name="Campaigns" fill="#7C6DDD" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          )}
+          ) : <p className="py-16 text-center text-xs text-text-secondary">No campaign conversion data available.</p>}
         </div>
 
         {/* Top 5 Most Disrupted SKUs */}

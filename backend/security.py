@@ -7,20 +7,24 @@ import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from backend.core.settings import settings
+from backend.database.collections import USERS
+from backend.database.connection import get_db
+from backend.permissions import has_permission
 
 TOKEN_TTL_MINUTES = settings.access_token_expire_minutes
 PBKDF2_ITERATIONS = 600_000
 
 ROLE_LABELS = {
-    "platform_admin": "Platform administrator",
-    "operations_manager": "Operations manager",
-    "supply_analyst": "Supply analyst",
-    "campaign_manager": "Campaign manager",
-    "viewer": "Read-only viewer",
+    "admin": "Admin",
+    "manager": "Manager",
+    "viewer": "Viewer",
 }
+
+VALID_ROLES = set(ROLE_LABELS)
 
 
 def hash_password(password: str) -> str:
@@ -85,21 +89,80 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
 
 def allows(role: str, method: str, path: str) -> bool:
-    """Map API operations to the least-privileged NexCart role."""
-    if role == "platform_admin":
-        return True
-    if method == "GET":
-        if path.startswith("/api/nudges"):
-            return role == "campaign_manager"
-        if path.startswith("/api/analytics"):
-            return role in {"operations_manager", "supply_analyst", "campaign_manager"}
-        return role in {"operations_manager", "supply_analyst", "campaign_manager", "viewer"}
-    if path.startswith("/api/signals"):
-        return role in {"operations_manager", "supply_analyst"}
-    if path.startswith("/api/skus") or path.startswith("/api/disruptions"):
-        return role == "operations_manager"
-    if path.startswith("/api/nudges") or path.startswith("/api/agents/run-nudge"):
-        return role == "campaign_manager"
-    if path.startswith("/api/agents/run-disruption"):
-        return role == "operations_manager"
-    return False
+    """Map HTTP operations to centralized permissions."""
+    if path == "/api/auth/me":
+        permission = "dashboard:view"
+    elif path.startswith("/api/dashboard") or path == "/api/health":
+        permission = "dashboard:view"
+    elif path.startswith("/api/skus"):
+        permission = (
+            "sku:view" if method == "GET"
+            else "sku:create" if method == "POST"
+            else "sku:risk_override" if method == "PATCH" and path.endswith("/risk")
+            else "sku:update" if method in {"PATCH", "PUT"}
+            else "sku:delete" if method == "DELETE"
+            else "sku:view"
+        )
+    elif path.startswith("/api/disruptions"):
+        permission = "disruptions:view" if method == "GET" else "disruptions:manage"
+    elif path.startswith("/api/signals"):
+        permission = "signals:view" if method == "GET" else "signals:ingest"
+    elif path.startswith("/api/nudges"):
+        permission = "nudges:view" if method == "GET" else "nudges:manage"
+    elif path.startswith("/api/analytics"):
+        permission = "analytics:view"
+    elif path.startswith("/api/agents/run-disruption"):
+        permission = "disruption_agent:run"
+    elif path.startswith("/api/agents/run-nudge"):
+        permission = "nudge_agent:run"
+    elif path.startswith("/api/customers"):
+        permission = "customers:view" if method == "GET" else "customers:manage"
+    elif path.startswith("/api/settings"):
+        permission = "settings:view" if method == "GET" else "settings:manage"
+    elif path.startswith("/api/users"):
+        if path.endswith("/reset-password"):
+            permission = "users:reset_password"
+        elif path.endswith("/status"):
+            permission = "users:deactivate"
+        elif method == "POST":
+            permission = "users:create"
+        elif method == "PATCH":
+            permission = "users:update"
+        else:
+            permission = "users:view"
+    elif path.startswith("/api/audit"):
+        permission = "audit_logs:view"
+    else:
+        return role == "admin"
+    return has_permission(role, permission)
+
+
+async def get_current_user(authorization: Optional[str] = Header(default=None), access_token: Optional[str] = None) -> dict[str, Any]:
+    token = ""
+    if authorization:
+        token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        token = access_token or ""
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    payload = decode_access_token(token)
+    user = await get_db()[USERS].find_one({"email": payload["sub"], "active": True})
+    if not user:
+        raise HTTPException(status_code=401, detail="Inactive or unknown user")
+    if user["role"] != payload.get("role"):
+        raise HTTPException(status_code=401, detail="Access token is stale; please sign in again")
+    return {
+        "id": str(user["_id"]),
+        "email": user["email"],
+        "name": user["name"],
+        "role": user["role"],
+        "active": True,
+    }
+
+
+def require_permission(permission: str):
+    async def dependency(current_user: dict[str, Any] = Depends(get_current_user)):
+        if not has_permission(current_user["role"], permission):
+            raise HTTPException(status_code=403, detail="You do not have permission to perform this action")
+        return current_user
+    return Depends(dependency)

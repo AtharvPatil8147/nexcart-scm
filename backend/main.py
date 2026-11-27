@@ -9,7 +9,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 
@@ -35,6 +35,33 @@ async def lifespan(app: FastAPI):
         await connect_to_mongo()
         from backend.routers.auth import bootstrap_admin
         await bootstrap_admin()
+        from backend.routers.auth import bootstrap_demo_accounts
+        await bootstrap_demo_accounts()
+        # Idempotent compatibility migration for pre-RBAC user documents.
+        from backend.database.collections import USERS
+        from backend.database.connection import get_db
+        database = get_db()
+        legacy_role_mapping = {
+            "platform_admin": "admin",
+            "operations_manager": "manager",
+            "supply_analyst": "viewer",
+            "campaign_manager": "viewer",
+        }
+        valid_roles = {"admin", "manager", "viewer"}
+        cursor = database[USERS].find({})
+        async for existing_user in cursor:
+            updates = {}
+            existing_role = existing_user.get("role")
+            if existing_role in legacy_role_mapping:
+                updates["role"] = legacy_role_mapping[existing_role]
+            elif existing_role not in valid_roles:
+                updates["role"] = "viewer"
+            if "active" not in existing_user:
+                updates["active"] = True
+            if "created_at" not in existing_user:
+                updates["created_at"] = datetime.now(timezone.utc)
+            if updates:
+                await database[USERS].update_one({"_id": existing_user["_id"]}, {"$set": updates})
     except Exception as exc:
         logger.error(f"MongoDB connection failed: {exc}")
 
@@ -105,6 +132,8 @@ async def authentication_middleware(request: Request, call_next):
     if not request.url.path.startswith("/api/") or request.url.path in public_paths:
         return await call_next(request)
     from backend.security import allows, decode_access_token
+    from backend.database.connection import get_db
+    from backend.database.collections import USERS
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip() or request.query_params.get("access_token", "")
     if not token:
         return JSONResponse(status_code=401, content={"detail": "Authentication required"})
@@ -112,6 +141,20 @@ async def authentication_middleware(request: Request, call_next):
         user = decode_access_token(token)
     except HTTPException as exc:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    try:
+        database_user = await get_db()[USERS].find_one({"email": user["sub"]})
+    except Exception:
+        database_user = None
+    if not database_user or not database_user.get("active", True):
+        return JSONResponse(status_code=401, content={"detail": "Inactive or unknown user"})
+    if database_user.get("role") != user.get("role"):
+        return JSONResponse(status_code=401, content={"detail": "Access token is stale; please sign in again"})
+    user = {
+        "id": str(database_user["_id"]),
+        "email": database_user["email"],
+        "name": database_user["name"],
+        "role": database_user["role"],
+    }
     if not allows(user["role"], request.method, request.url.path):
         return JSONResponse(status_code=403, content={"detail": "Your role is not allowed to perform this action"})
     request.state.user = user
@@ -172,6 +215,7 @@ from backend.routers.disruptions import router as disruptions_router
 from backend.routers.nudges import router as nudges_router
 from backend.routers.signals import router as signals_router
 from backend.routers.skus import router as skus_router
+from backend.routers.users import router as users_router
 
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
@@ -179,6 +223,7 @@ app.include_router(skus_router, prefix="/api")
 app.include_router(disruptions_router, prefix="/api")
 app.include_router(signals_router, prefix="/api")
 app.include_router(nudges_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
 
 # ══════════════════════════════════════════════════════════════════
 # ROOT REDIRECT

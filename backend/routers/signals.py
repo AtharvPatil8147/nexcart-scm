@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,8 @@ from backend.database.collections import SIGNAL_LOGS
 from backend.database.connection import get_db
 from backend.database.models import SignalLogBase, SignalLogResponse
 from backend.utils.logger import get_logger
+from backend.security import get_current_user
+from backend.audit import record_audit
 
 logger = get_logger("router.signals")
 router = APIRouter(tags=["Signals"])
@@ -123,7 +125,7 @@ async def signal_feed():
 
 
 @router.post("/signals/ingest", response_model=IngestResponse, status_code=201)
-async def ingest_signal(signal: SignalLogBase):
+async def ingest_signal(signal: SignalLogBase, current_user: dict = Depends(get_current_user)):
     """Manually submit a signal payload."""
     try:
         database = get_db()
@@ -134,6 +136,7 @@ async def ingest_signal(signal: SignalLogBase):
             doc["source"] = doc["source"].value
 
         await database[SIGNAL_LOGS].insert_one(doc)
+        await record_audit(current_user, "signal.ingested", "signal", signal.signal_id)
 
         # Optionally trigger disruption agent for high-severity signals
         agent_triggered = False

@@ -14,6 +14,7 @@ import { getSignalHistory, ingestSignal } from '../api/client';
 import useSSE from '../hooks/useSSE';
 import RiskBadge from '../components/RiskBadge';
 import clsx from 'clsx';
+import { useAuth } from '../auth/AuthContext';
 
 const SOURCE_TABS = [
   { key: 'all', label: 'All', icon: Radio },
@@ -307,6 +308,7 @@ function IngestForm({ onSubmit, loading, onClose }) {
 }
 
 export default function Signals() {
+  const { hasPermission } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('all');
   const [showForm, setShowForm] = useState(false);
@@ -382,7 +384,7 @@ export default function Signals() {
           )}
         </div>
 
-        <button
+        {hasPermission('signals:ingest') && <button
           onClick={() => setShowForm(!showForm)}
           className={clsx(
             'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold',
@@ -394,11 +396,11 @@ export default function Signals() {
         >
           {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {showForm ? 'Cancel' : 'Ingest Manual Signal'}
-        </button>
+        </button>}
       </div>
 
       {/* ── Ingest Form ── */}
-      {showForm && (
+      {showForm && hasPermission('signals:ingest') && (
         <IngestForm
           onSubmit={(data) => ingestMutation.mutate(data)}
           loading={ingestMutation.isPending}

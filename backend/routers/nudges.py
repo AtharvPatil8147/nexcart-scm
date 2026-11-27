@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 
 from backend.database.collections import (
@@ -21,6 +21,8 @@ from backend.database.models import (
     NudgeCampaignResponse, NudgeStatus,
 )
 from backend.utils.logger import get_logger
+from backend.security import get_current_user
+from backend.audit import record_audit
 
 logger = get_logger("router.nudges")
 router = APIRouter(tags=["Nudges & Analytics"])
@@ -151,7 +153,7 @@ async def get_nudge(campaign_id: str):
 
 
 @router.patch("/nudges/{campaign_id}/status", response_model=NudgeCampaignResponse)
-async def update_nudge_status(campaign_id: str, update: StatusUpdateRequest):
+async def update_nudge_status(campaign_id: str, update: StatusUpdateRequest, current_user: dict = Depends(get_current_user)):
     """Update campaign status (opened, converted)."""
     try:
         database = get_db()
@@ -171,6 +173,7 @@ async def update_nudge_status(campaign_id: str, update: StatusUpdateRequest):
         )
 
         updated = await database[NUDGE_CAMPAIGNS].find_one({"campaign_id": campaign_id})
+        await record_audit(current_user, "nudge.status_updated", "nudge", campaign_id, {"status": update.status.value})
         return _serialize_doc(updated)
     except HTTPException:
         raise
@@ -278,7 +281,7 @@ async def risk_trend():
 # ══════════════════════════════════════════════════════════════════
 
 @router.post("/agents/run-disruption", response_model=AgentRunResponse)
-async def trigger_disruption_agent():
+async def trigger_disruption_agent(current_user: dict = Depends(get_current_user)):
     """Trigger Layer 1 disruption agent manually."""
     try:
         from backend.agents.disruption_agent import run_disruption_agent
@@ -286,6 +289,7 @@ async def trigger_disruption_agent():
         started_at = datetime.now(timezone.utc).isoformat()
         # Run in background
         asyncio.create_task(run_disruption_agent())
+        await record_audit(current_user, "agent.disruption_triggered", "agent", "disruption")
 
         return AgentRunResponse(
             status="started",
@@ -298,13 +302,14 @@ async def trigger_disruption_agent():
 
 
 @router.post("/agents/run-nudge", response_model=AgentRunResponse)
-async def trigger_nudge_agent(body: NudgeAgentRequest):
+async def trigger_nudge_agent(body: NudgeAgentRequest, current_user: dict = Depends(get_current_user)):
     """Trigger Layer 2 nudge agent manually."""
     try:
         from backend.agents.nudge_agent import run_nudge_agent
 
         started_at = datetime.now(timezone.utc).isoformat()
         asyncio.create_task(run_nudge_agent(sku_ids=body.sku_ids))
+        await record_audit(current_user, "agent.nudge_triggered", "agent", "nudge", {"sku_ids": body.sku_ids})
 
         return AgentRunResponse(
             status="started",

@@ -19,6 +19,8 @@ import StatCard from '../components/StatCard';
 import SKUTable from '../components/SKUTable';
 import DisruptionFeed from '../components/DisruptionFeed';
 import NudgeCard from '../components/NudgeCard';
+import { useAuth } from '../auth/AuthContext';
+import RiskBadge from '../components/RiskBadge';
 
 const RISK_COLORS = {
   low: '#1D9E75',
@@ -68,6 +70,8 @@ function DonutLabel({ viewBox, total }) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
+  const canViewNudges = hasPermission('nudges:view');
 
   // ── Data Queries ──
   const { data: stats, isLoading: statsLoading } = useQuery({
@@ -86,6 +90,7 @@ export default function Dashboard() {
     queryKey: ['nudges-recent'],
     queryFn: () => getNudges({ limit: 5 }),
     refetchInterval: 60000,
+    enabled: canViewNudges,
   });
 
   const { data: disruptionData, isLoading: disruptionsLoading } = useQuery({
@@ -216,22 +221,29 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Row 3: Recent Nudges + Live Signal Feed ── */}
+      {/* ── Row 3: Role-relevant campaigns or operational priorities ── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Recent Nudge Campaigns (60%) */}
+        {/* Campaigns for admins, operational priorities for managers */}
         <div className="lg:col-span-3 bg-bg-card border border-border rounded-card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-text-primary">
-              Recent Nudge Campaigns
+              {canViewNudges ? 'Recent Nudge Campaigns' : 'Operational Priorities'}
             </h2>
-            <button
-              onClick={() => navigate('/nudges')}
-              className="flex items-center gap-1 text-xs text-accent-purple hover:text-accent-purple/80 transition-colors"
-            >
-              View all <ArrowRight className="w-3 h-3" />
+            <button onClick={() => navigate(canViewNudges ? '/nudges' : '/manager/inventory')} className="flex items-center gap-1 text-xs text-accent-purple hover:text-accent-purple/80 transition-colors">
+              {canViewNudges ? 'View campaigns' : 'Review inventory'} <ArrowRight className="w-3 h-3" />
             </button>
           </div>
-          {nudgesLoading ? (
+          {!canViewNudges ? (
+            <div className="divide-y divide-border/60">
+              {(skuData?.items || []).slice(0, 4).map((sku) => (
+                <button key={sku.sku_id} onClick={() => navigate('/manager/inventory')} className="flex w-full items-center justify-between gap-3 py-3 text-left">
+                  <span className="min-w-0"><span className="block truncate text-xs font-medium text-text-primary">{sku.name}</span><span className="text-[10px] text-text-secondary">{sku.sku_id} · stock {sku.current_stock}</span></span>
+                  <span className="flex shrink-0 items-center gap-2"><RiskBadge level={sku.risk_level} /><span className="text-xs font-bold text-text-primary">{sku.risk_score}</span></span>
+                </button>
+              ))}
+              {!skusLoading && !(skuData?.items || []).length && <p className="py-8 text-center text-xs text-text-secondary">No inventory priorities are available.</p>}
+            </div>
+          ) : nudgesLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="bg-bg-hover rounded-card p-4 space-y-3">
